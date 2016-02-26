@@ -35,10 +35,7 @@
     (println "ERROR:" e)
     (recur (<? err-ch))))
 
-(def server (server-peer (create-http-kit-handler! uri err-ch)
-                         "SERVER"
-                         server-store
-                         err-ch))
+(def server (<?? (server-peer server-store err-ch uri)))
 
 (start server)
 (comment
@@ -47,7 +44,7 @@
 ;; let's get distributed :)
 (def client-store (<?? (new-mem-store)))
 
-(def client (client-peer "CLIENT" client-store err-ch))
+(def client (<?? (client-peer client-store err-ch)))
 
 ;; to interact with a peer we use a stage
 (def stage (<?? (create-stage! "eve@replikativ.io" client err-ch)))
