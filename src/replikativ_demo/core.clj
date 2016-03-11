@@ -1,10 +1,11 @@
 (ns replikativ-demo.core
-  (:require [replikativ.crdt.cdvcs.realize :refer [head-value]]
+  (:require [replikativ.crdt.cdvcs.realize :refer [head-value stream-into-atom!]]
             [replikativ.crdt.cdvcs.stage :as s]
+            [replikativ.stage :refer [subscribe-crdts!]]
             [replikativ.stage :refer [create-stage! connect! subscribe-crdts!]]
             [replikativ.peer :refer [client-peer server-peer]]
 
-            [kabel.platform :refer [create-http-kit-handler! start stop]]
+            [kabel.platform :refer [start stop]]
             [konserve.memory :refer [new-mem-store]]
 
             [full.async :refer [<?? <? go-try go-loop-try]] ;; core.async error handling
@@ -47,38 +48,39 @@
 (def client (<?? (client-peer client-store err-ch)))
 
 ;; to interact with a peer we use a stage
-(def stage (<?? (create-stage! "eve@replikativ.io" client err-ch)))
+(def stage (<?? (create-stage! "mail:eve@replikativ.io" client err-ch)))
 
 (<?? (connect! stage uri))
 
 ;; create a new CDVCS
 (<?? (s/create-cdvcs! stage :description "testing" :id cdvcs-id))
 
+;; let's stream operations in an atom that we can watch
+(def val-atom (atom -1))
+(stream-into-atom! stage ["mail:eve@replikativ.io" cdvcs-id] eval-fns val-atom)
+
 ;; prepare a transaction
-(<?? (s/transact stage ["eve@replikativ.io" cdvcs-id]
+(<?? (s/transact stage ["mail:eve@replikativ.io" cdvcs-id]
                  ;; set a new value for this CDVCS
                  '(fn [_ new] new)
                  0))
 
 ;; commit it
-(<?? (s/commit! stage {"eve@replikativ.io" #{cdvcs-id}}))
+(<?? (s/commit! stage {"mail:eve@replikativ.io" #{cdvcs-id}}))
 
 
 ;; did it work locally?
-(<?? (head-value client-store
-                 eval-fns
-                 ;; manually verify metadata presence
-                 (:state (get @(:state client-store) ["eve@replikativ.io" cdvcs-id]))))
+@val-atom ;; => 0
 
 ;; let's alter the value with a simple addition
-(<?? (s/transact stage ["eve@replikativ.io" cdvcs-id]
+(<?? (s/transact stage ["mail:eve@replikativ.io" cdvcs-id]
                  '+ 1123))
 
 ;; commit it
-(<?? (s/commit! stage {"eve@replikativ.io" #{cdvcs-id}}))
+(<?? (s/commit! stage {"mail:eve@replikativ.io" #{cdvcs-id}}))
 
 ;; and did everything also apply remotely?
 (<?? (head-value server-store
                  eval-fns
                  ;; manually verify metadata presence
-                 (:state (get @(:state server-store) ["eve@replikativ.io" cdvcs-id]))))
+                 (:state (get @(:state server-store) ["mail:eve@replikativ.io" cdvcs-id]))))
