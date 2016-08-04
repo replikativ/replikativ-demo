@@ -1,7 +1,6 @@
 (ns replikativ-demo.core
   (:require [replikativ.crdt.cdvcs.realize :refer [head-value stream-into-atom!]]
             [replikativ.crdt.cdvcs.stage :as s]
-            [replikativ.stage :refer [subscribe-crdts!]]
             [replikativ.stage :refer [create-stage! connect! subscribe-crdts!]]
             [replikativ.peer :refer [client-peer server-peer]]
 
@@ -27,16 +26,7 @@
 ;; create a local ACID key-value store
 (def server-store (<?? (new-mem-store)))
 
-;; collect errors
-(def err-ch (chan))
-
-;; and just print them to the REPL
-(go-loop [e (<? err-ch)]
-  (when e
-    (println "ERROR:" e)
-    (recur (<? err-ch))))
-
-(def server (<?? (server-peer server-store err-ch uri)))
+(def server (<?? (server-peer server-store uri)))
 
 (start server)
 (comment
@@ -45,10 +35,10 @@
 ;; let's get distributed :)
 (def client-store (<?? (new-mem-store)))
 
-(def client (<?? (client-peer client-store err-ch)))
+(def client (<?? (client-peer client-store)))
 
 ;; to interact with a peer we use a stage
-(def stage (<?? (create-stage! "mail:eve@replikativ.io" client err-ch)))
+(def stage (<?? (create-stage! "mail:eve@replikativ.io" client)))
 
 (<?? (connect! stage uri))
 
@@ -60,27 +50,26 @@
 (stream-into-atom! stage ["mail:eve@replikativ.io" cdvcs-id] eval-fns val-atom)
 
 ;; prepare a transaction
-(<?? (s/transact stage ["mail:eve@replikativ.io" cdvcs-id]
+(<?? (s/transact! stage ["mail:eve@replikativ.io" cdvcs-id]
                  ;; set a new value for this CDVCS
-                 '(fn [_ new] new)
-                 0))
-
-;; commit it
-(<?? (s/commit! stage {"mail:eve@replikativ.io" #{cdvcs-id}}))
+                 [['(fn [_ new] new) 0]]))
 
 
 ;; did it work locally?
 @val-atom ;; => 0
 
 ;; let's alter the value with a simple addition
-(<?? (s/transact stage ["mail:eve@replikativ.io" cdvcs-id]
-                 '+ 1123))
-
-;; commit it
-(<?? (s/commit! stage {"mail:eve@replikativ.io" #{cdvcs-id}}))
+(<?? (s/transact! stage ["mail:eve@replikativ.io" cdvcs-id]
+                 [['+ 1123]]))
 
 ;; and did everything also apply remotely?
 (<?? (head-value server-store
                  eval-fns
                  ;; manually verify metadata presence
                  (:state (get @(:state server-store) ["mail:eve@replikativ.io" cdvcs-id]))))
+
+(<?? (head-value client-store
+                 eval-fns
+                 ;; manually verify metadata presence
+                 (:state (get @(:state client-store) ["mail:eve@replikativ.io" cdvcs-id]))))
+;; => 1123
