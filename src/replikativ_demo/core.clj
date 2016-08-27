@@ -4,8 +4,9 @@
             [replikativ.stage :refer [create-stage! connect! subscribe-crdts!]]
             [replikativ.peer :refer [client-peer server-peer]]
 
-            [kabel.platform :refer [start stop]]
+            [kabel.http-kit :refer [start stop]]
             [konserve.memory :refer [new-mem-store]]
+            [konserve.filestore :refer [new-fs-store delete-store]]
 
             [full.async :refer [<?? <? go-try go-loop-try]] ;; core.async error handling
             [clojure.core.async :refer [chan go-loop go]]))
@@ -23,8 +24,11 @@
    '+ +})
 
 
+(comment
+  (delete-store "/tmp/replikativ-demo-store"))
 ;; create a local ACID key-value store
-(def server-store (<?? (new-mem-store)))
+(def server-store (<?? (new-fs-store "/tmp/replikativ-demo-store")))
+
 
 (def server (<?? (server-peer server-store uri)))
 
@@ -66,10 +70,17 @@
 (<?? (head-value server-store
                  eval-fns
                  ;; manually verify metadata presence
-                 (:state (get @(:state server-store) ["mail:eve@replikativ.io" cdvcs-id]))))
+                 (get-in @stage ["mail:eve@replikativ.io" cdvcs-id :state])))
 
 (<?? (head-value client-store
                  eval-fns
                  ;; manually verify metadata presence
-                 (:state (get @(:state client-store) ["mail:eve@replikativ.io" cdvcs-id]))))
+                 (get-in @stage ["mail:eve@replikativ.io" cdvcs-id :state])))
 ;; => 1123
+
+
+(comment
+  ;; a little stress test :)
+  (doseq [i (range 100)]
+    (<?? (s/transact! stage ["mail:eve@replikativ.io" cdvcs-id]
+                      [['+ 1]]))))
