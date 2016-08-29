@@ -51,7 +51,8 @@
 
 ;; let's stream operations in an atom that we can watch
 (def val-atom (atom -1))
-(stream-into-atom! stage ["mail:eve@replikativ.io" cdvcs-id] eval-fns val-atom)
+(def close-stream
+  (stream-into-atom! stage ["mail:eve@replikativ.io" cdvcs-id] eval-fns val-atom))
 
 ;; prepare a transaction
 (<?? (s/transact! stage ["mail:eve@replikativ.io" cdvcs-id]
