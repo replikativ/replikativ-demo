@@ -9,7 +9,7 @@
             [konserve.filestore :refer [new-fs-store delete-store]]
 
             [full.async :refer [<?? <? go-try go-loop-try]] ;; core.async error handling
-            [clojure.core.async :refer [chan go-loop go]]))
+            [clojure.core.async :refer [chan go-loop go] :as async]))
 
 (def uri "ws://127.0.0.1:31744")
 
@@ -23,6 +23,10 @@
   {'(fn [_ new] new) (fn [_ new] new)
    '+ +})
 
+;; here we stream live into an atom
+(def stream-eval-fns
+  {'(fn [_ new] new) (fn [a new] (reset! a new) a)
+   '+ (fn [a new] (swap! a + new) a)})
 
 (comment
   (delete-store "/tmp/replikativ-demo-store"))
@@ -52,7 +56,10 @@
 ;; let's stream operations in an atom that we can watch
 (def val-atom (atom -1))
 (def close-stream
-  (stream-into-atom! stage ["mail:eve@replikativ.io" cdvcs-id] eval-fns val-atom))
+  (stream-into-atom! stage ["mail:eve@replikativ.io" cdvcs-id] stream-eval-fns val-atom))
+
+(comment
+  (async/close! close-stream))
 
 ;; prepare a transaction
 (<?? (s/transact! stage ["mail:eve@replikativ.io" cdvcs-id]
