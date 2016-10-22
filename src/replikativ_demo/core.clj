@@ -1,14 +1,14 @@
 (ns replikativ-demo.core
-  (:require [replikativ.crdt.cdvcs.realize :refer [head-value stream-into-atom!]]
+  (:require [replikativ.crdt.cdvcs.realize :refer [head-value stream-into-identity!]]
             [replikativ.crdt.cdvcs.stage :as s]
             [replikativ.stage :refer [create-stage! connect! subscribe-crdts!]]
             [replikativ.peer :refer [client-peer server-peer]]
 
-            [kabel.http-kit :refer [start stop]]
+            [kabel.peer :refer [start stop]]
             [konserve.memory :refer [new-mem-store]]
             [konserve.filestore :refer [new-fs-store delete-store]]
 
-            [full.async :refer [<?? <? go-try go-loop-try]] ;; core.async error handling
+            [superv.async :refer [<?? <? S go-try go-loop-try]] ;; core.async error handling
             [clojure.core.async :refer [chan go-loop go] :as async]))
 
 (def uri "ws://127.0.0.1:31744")
@@ -31,64 +31,64 @@
 (comment
   (delete-store "/tmp/replikativ-demo-store"))
 ;; create a local ACID key-value store
-(def server-store (<?? (new-fs-store "/tmp/replikativ-demo-store")))
+(def server-store (<?? S (new-fs-store "/tmp/replikativ-demo-store")))
 
 
-(def server (<?? (server-peer server-store uri)))
+(def server (<?? S (server-peer S server-store uri)))
 
-(start server)
+(<?? S (start server))
 (comment
-  (stop server))
+  (<?? S (stop server)))
 
 ;; let's get distributed :)
-(def client-store (<?? (new-mem-store)))
+(def client-store (<?? S (new-mem-store)))
 
-(def client (<?? (client-peer client-store)))
+(def client (<?? S (client-peer S client-store)))
 
 ;; to interact with a peer we use a stage
-(def stage (<?? (create-stage! "mail:eve@replikativ.io" client)))
+(def stage (<?? S (create-stage! "mail:eve@replikativ.io" client)))
 
-(<?? (connect! stage uri))
+(<?? S (connect! stage uri))
 
 ;; create a new CDVCS
-(<?? (s/create-cdvcs! stage :description "testing" :id cdvcs-id))
+(<?? S (s/create-cdvcs! stage :description "testing" :id cdvcs-id))
 
 ;; let's stream operations in an atom that we can watch
 (def val-atom (atom -1))
 (def close-stream
-  (stream-into-atom! stage ["mail:eve@replikativ.io" cdvcs-id] stream-eval-fns val-atom))
+  (stream-into-identity! stage ["mail:eve@replikativ.io" cdvcs-id] stream-eval-fns val-atom))
 
 (comment
   (async/close! close-stream))
 
 ;; prepare a transaction
-(<?? (s/transact! stage ["mail:eve@replikativ.io" cdvcs-id]
-                 ;; set a new value for this CDVCS
-                 [['(fn [_ new] new) 0]]))
+(<?? S (s/transact! stage ["mail:eve@replikativ.io" cdvcs-id]
+                    ;; set a new value for this CDVCS
+                    [['(fn [_ new] new) 0]]))
 
 
 ;; did it work locally?
 @val-atom ;; => 0
 
 ;; let's alter the value with a simple addition
-(<?? (s/transact! stage ["mail:eve@replikativ.io" cdvcs-id]
-                 [['+ 1123]]))
+(<?? S (s/transact! stage ["mail:eve@replikativ.io" cdvcs-id]
+                    [['+ 1123]]))
 
 ;; and did everything also apply remotely?
-(<?? (head-value server-store
-                 eval-fns
-                 ;; manually verify metadata presence
-                 (get-in @stage ["mail:eve@replikativ.io" cdvcs-id :state])))
+(<?? S (head-value S server-store
+                   eval-fns
+                   ;; manually verify metadata presence
+                   (get-in @stage ["mail:eve@replikativ.io" cdvcs-id :state])))
 
-(<?? (head-value client-store
-                 eval-fns
-                 ;; manually verify metadata presence
-                 (get-in @stage ["mail:eve@replikativ.io" cdvcs-id :state])))
+(<?? S (head-value S client-store
+                   eval-fns
+                   ;; manually verify metadata presence
+                   (get-in @stage ["mail:eve@replikativ.io" cdvcs-id :state])))
 ;; => 1123
 
 
 (comment
   ;; a little stress test :)
   (doseq [i (range 100)]
-    (<?? (s/transact! stage ["mail:eve@replikativ.io" cdvcs-id]
-                      [['+ 1]]))))
+    (<?? S (s/transact! stage ["mail:eve@replikativ.io" cdvcs-id]
+                        [['+ 1]]))))
