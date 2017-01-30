@@ -3,8 +3,10 @@
             [replikativ.crdt.cdvcs.stage :as s]
             [replikativ.stage :refer [create-stage! connect! subscribe-crdts!]]
             [replikativ.peer :refer [client-peer server-peer]]
+            [replikativ.p2p.fetch :refer [fetch]]
 
             [kabel.peer :refer [start stop]]
+            [kabel.middleware.transit :refer [transit]]
             [konserve.memory :refer [new-mem-store]]
             [konserve.filestore :refer [new-fs-store delete-store]]
 
@@ -34,7 +36,7 @@
 (def server-store (<?? S (new-fs-store "/tmp/replikativ-demo-store")))
 
 
-(def server (<?? S (server-peer S server-store uri)))
+(def server (<?? S (server-peer S server-store uri :middleware fetch)))
 
 (<?? S (start server))
 (comment
@@ -43,7 +45,7 @@
 ;; let's get distributed :)
 (def client-store (<?? S (new-mem-store)))
 
-(def client (<?? S (client-peer S client-store)))
+(def client (<?? S (client-peer S client-store :middleware fetch)))
 
 ;; to interact with a peer we use a stage
 (def stage (<?? S (create-stage! "mail:eve@replikativ.io" client)))
@@ -55,11 +57,12 @@
 
 ;; let's stream operations in an atom that we can watch
 (def val-atom (atom -1))
-(def close-stream
-  (stream-into-identity! stage ["mail:eve@replikativ.io" cdvcs-id] stream-eval-fns val-atom))
+(def stream
+  (stream-into-identity! stage ["mail:eve@replikativ.io" cdvcs-id]
+                         stream-eval-fns val-atom))
 
 (comment
-  (async/close! close-stream))
+  (async/close! (:close-ch stream)))
 
 ;; prepare a transaction
 (<?? S (s/transact! stage ["mail:eve@replikativ.io" cdvcs-id]
